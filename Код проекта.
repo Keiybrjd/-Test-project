@@ -1,3 +1,4 @@
+# -*- coding: cp1251 -*-
 import matplotlib.pyplot as plt
 from skimage import io, color, measure
 from skimage.filters import threshold_otsu
@@ -180,3 +181,4 @@ def plot_diagnosis_results(diseases):
 print("ПАРАЗИТАРНЫЕ ЗАБОЛЕВАНИЯ: ДИАГНОСТИКА ПО СИМПТОМАМ")
 print("--------------------------------------------------")
 diagnose()
+# coding=<encoding name>
