@@ -1,0 +1,182 @@
+import matplotlib.pyplot as plt
+from skimage import io, color, measure
+from skimage.filters import threshold_otsu
+from skimage.draw import circle_perimeter
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
+# База данных паразитарных болезней и их симптомов
+parasitic_diseases = {
+    "Аскаридоз": {
+        "symptoms": ["тошнота", "рвота", "боли в животе", "кашель с кровью", "аллергическая сыпь"],
+        "description": "Круглые черви Ascaris lumbricoides, длина до 40 см. Поражают кишечник и легкие."
+    },
+    "Анкилостомоз": {
+        "symptoms": ["зудящая сыпь", "боли в животе", "черный стул", "анемия", "слабость"],
+        "description": "Кривоголовки Ancylostoma duodenale. Питаются кровью в кишечнике, вызывают анемию."
+    },
+    "Стронгилоидоз": {
+        "symptoms": ["блуждающие волдыри", "понос", "кровавая диарея", "кашель с мокротой"],
+        "description": "Strongyloides stercoralis. Опасен гиперинфекцией при иммунодефиците."
+    },
+    "Тениоз (свиной цепень)": {
+        "symptoms": ["тошнота", "потеря веса", "членики червя в кале"],
+        "description": "Taenia solium. Может вызывать цистицеркоз мозга."
+    },
+    "Шистосомоз": {
+        "symptoms": ["кровь в моче", "лихорадка", "боли в животе", "увеличение печени"],
+        "description": "Кровяные сосальщики Schistosoma. Поражают кишечник и мочеполовую систему."
+    },
+    "Амебиаз": {
+        "symptoms": ["кровавый понос", "ложные позывы", "боли в левой части живота", "лихорадка"],
+        "description": "Entamoeba histolytica. Может вызывать абсцессы печени."
+    }
+}
+
+
+def analyze_image(image_path):
+    """Анализирует изображение и обводит обнаруженные объекты кружочками"""
+    try:
+        # Загрузка изображения
+        image = io.imread(image_path)
+
+        # Преобразование в grayscale если нужно
+        if len(image.shape) == 3:
+            image_gray = color.rgb2gray(image)
+        else:
+            image_gray = image
+
+        # Бинаризация изображения
+        thresh = threshold_otsu(image_gray)
+        binary = image_gray > thresh
+
+        # Нахождение контуров объектов
+        contours = measure.find_contours(binary, 0.8)
+
+        # Создаем копию изображения для рисования
+        if len(image.shape) == 2:
+            image_out = color.gray2rgb(image)
+        else:
+            image_out = image.copy()
+
+        # Рисуем круги вокруг каждого обнаруженного объекта
+        for contour in contours:
+            # Находим центр и радиус объекта
+            y, x = contour.mean(axis=0)
+            radius = np.sqrt((contour[:, 0] - x).max() ** 2 + (contour[:, 1] - y).max() ** 2)
+
+            # Рисуем круг
+            rr, cc = circle_perimeter(int(y), int(x), int(radius), shape=image_out.shape)
+            image_out[rr, cc] = (255, 0, 0)  # Красный цвет
+
+        # Отображение результата
+        plt.figure(figsize=(10, 6))
+        plt.imshow(image_out)
+        plt.title('Анализ изображения с выделенными объектами')
+        plt.axis('off')
+        plt.show()
+
+        print(f"\nНа изображении обнаружено {len(contours)} объектов.")
+
+    except Exception as e:
+        print(f"\nОшибка при анализе изображения: {str(e)}")
+
+
+def diagnose():
+    print("Введите ваши симптомы (через запятую):")
+    print("Доступные симптомы: тошнота, рвота, боли в животе, кашель с кровью, аллергическая сыпь, зудящая сыпь, черный стул, анемия, слабость, блуждающие волдыри, понос, кровавая диарея, кашель с мокротой, потеря веса, членики червя в кале, кровь в моче, лихорадка, увеличение печени, ложные позывы")
+
+    user_input = input("> ").lower()
+    user_symptoms = [s.strip() for s in user_input.split(",")]
+
+    possible_diseases = []
+
+    for disease, data in parasitic_diseases.items():
+        disease_symptoms = [s.lower() for s in data["symptoms"]]
+        match_count = sum(1 for symptom in user_symptoms if symptom in disease_symptoms)
+
+        if match_count > 0:
+            match_percentage = (match_count / len(disease_symptoms)) * 100
+            possible_diseases.append({
+                "name": disease,
+                "match": match_percentage,
+"description": data["description"],
+                "symptoms": data["symptoms"]
+            })
+
+    if not possible_diseases:
+        print("\nНе найдено заболеваний, соответствующих вашим симптомам.")
+        return
+
+    # Нормализация процентов с помощью MinMaxScaler из scikit-learn
+    percentages = np.array([d['match'] for d in possible_diseases]).reshape(-1, 1)
+    scaler = MinMaxScaler(feature_range=(0, 100))
+    normalized_percentages = scaler.fit_transform(percentages).flatten()
+
+    # Обновляем нормализованные проценты
+    for i, d in enumerate(possible_diseases):
+        d['normalized_match'] = normalized_percentages[i]
+
+    # Сортируем по степени совпадения
+    possible_diseases.sort(key=lambda x: x['normalized_match'], reverse=True)
+
+    print("\nВозможные диагнозы (с нормализованными процентами):")
+    for i, disease in enumerate(possible_diseases, 1):
+        print(f"\n{i}. {disease['name']} ({disease['normalized_match']:.1f}% совпадение)")
+        print(f"   Исходный процент: {disease['match']:.1f}%")
+        print(f"   Описание: {disease['description']}")
+        print(f"   Общие симптомы: {', '.join(disease['symptoms'])}")
+
+    # Построение графиков
+    plot_diagnosis_results(possible_diseases)
+
+    # Анализ изображения если пользователь хочет
+    print("\nХотите проанализировать изображение на наличие паразитов? (да/нет)")
+    if input("> ").lower() in ['да', 'yes', 'y']:
+        print("Введите путь к изображению:")
+        image_path = input("> ")
+        analyze_image(image_path)
+
+    print("\nВАЖНО: Это предварительная диагностика. Для точного диагноза обратитесь к врачу!")
+
+
+def plot_diagnosis_results(diseases):
+    """Функция для построения графиков результатов диагностики"""
+    if not diseases:
+        return
+
+    names = [d['name'] for d in diseases]
+    percentages = [d['match'] for d in diseases]
+    normalized_percentages = [d['normalized_match'] for d in diseases]
+
+    # Создаем фигуру с двумя subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Первый график - исходные проценты
+    bars1 = ax1.barh(names, percentages, color='skyblue')
+    ax1.set_xlabel('Процент совпадения (%)')
+    ax1.set_title('Исходная вероятность заболеваний')
+    ax1.set_xlim(0, 100)
+
+    # Второй график - нормализованные проценты
+    bars2 = ax2.barh(names, normalized_percentages, color='lightgreen')
+    ax2.set_xlabel('Нормализованный процент (%)')
+    ax2.set_title('Нормализованная вероятность заболеваний')
+    ax2.set_xlim(0, 100)
+
+    # Добавляем значения процентов на графики
+    for bars, ax in zip([bars1, bars2], [ax1, ax2]):
+        for bar in bars:
+            width = bar.get_width()
+            ax.text(width + 1, bar.get_y() + bar.get_height() / 2,
+                    f'{width:.1f}%',
+                    va='center')
+
+    plt.tight_layout()
+    plt.show()
+
+
+# Запуск диагностики
+print("ПАРАЗИТАРНЫЕ ЗАБОЛЕВАНИЯ: ДИАГНОСТИКА ПО СИМПТОМАМ")
+print("--------------------------------------------------")
+diagnose()
